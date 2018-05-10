@@ -55,7 +55,7 @@ type PixelFormat struct {
 
 func (pf *PixelFormat) Bytes() []byte {
 	bufSize := unsafe.Sizeof(*pf)
-	buf := bytes.NewBuffer(make([]byte, bufSize))
+	buf := bytes.NewBuffer(make([]byte, 0, bufSize))
 
 	binary.Write(buf, binary.BigEndian, pf.BitsPerPixel)
 	binary.Write(buf, binary.BigEndian, pf.Depth)
@@ -81,7 +81,7 @@ type ServerInitMessage struct {
 
 func (msg *ServerInitMessage) Bytes() []byte {
 	bufSize := unsafe.Sizeof(*msg)
-	buf := bytes.NewBuffer(make([]byte, bufSize))
+	buf := bytes.NewBuffer(make([]byte, 0, bufSize))
 
 	binary.Write(buf, binary.BigEndian, msg.Width)
 	binary.Write(buf, binary.BigEndian, msg.Height)

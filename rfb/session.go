@@ -264,11 +264,12 @@ func (s *Session) serverInit() {
 		NameLength: uint32(len(s.server.Name)),
 		Name:       []byte(s.server.Name),
 	}
-	_, err := s.Write(sim.Bytes())
+	simBytes := sim.Bytes()
+	_, err := s.Write(simBytes)
 	if err != nil {
-		panic(fmt.Errorf("send server init message failed: %s", err))
+		panic(fmt.Errorf("send server init message failed: %v", err))
 	}
-	log.Printf(">>> send server init message: %v", sim)
+	log.Printf(">>> send server init message: %v", simBytes)
 }
 
 func (s *Session) ProcessNormalProtocol() {
