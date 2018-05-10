@@ -21,7 +21,7 @@ func NewServer() *Server {
 			// 8, 16, 32
 			BitsPerPixel:  32,
 			Depth:         32,
-			BigEndianFlag: 1,
+			BigEndianFlag: 0,
 			TrueColorFlag: 1,
 			RedMax:        255,
 			GreenMax:      255,

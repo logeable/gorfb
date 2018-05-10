@@ -288,7 +288,7 @@ func (s *Session) serverInit() {
 	sim := &types.ServerInitMessage{
 		Width:             s.Server().Width,
 		Height:            s.Server().Height,
-		ServerPixelFormat: s.Server().defaultPF,
+		ServerPixelFormat: *s.Server().defaultPF,
 		NameLength:        uint32(len(s.Server().Name)),
 		Name:              []byte(s.Server().Name),
 	}
@@ -347,7 +347,7 @@ func (s *Session) setPixelFormat() {
 	}
 
 	buf := make([]byte, 16)
-	_, err = s.ReadUint16()
+	_, err = s.ReadFull(buf)
 	if err != nil {
 		panic(fmt.Errorf("read pixel format failed: %s", err))
 	}

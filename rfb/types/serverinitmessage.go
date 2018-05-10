@@ -7,7 +7,7 @@ import (
 
 type ServerInitMessage struct {
 	Width, Height     uint16
-	ServerPixelFormat *PixelFormat
+	ServerPixelFormat PixelFormat
 	NameLength        uint32
 	Name              []byte
 }
