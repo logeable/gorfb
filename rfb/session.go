@@ -412,7 +412,18 @@ func (s *Session) framebufferUpdateRequest() {
 }
 
 func (s *Session) keyEvent() {
-	panic("not implemented")
+	log.Println("handle keyEvent")
+	buf := make([]byte, 7)
+	_, err := s.ReadFull(buf)
+	if err != nil {
+		panic(fmt.Errorf("read key event failed: %s", err))
+	}
+
+	ke, err := types.NewKeyEvent(buf)
+	if err != nil {
+		panic(fmt.Errorf("new key event failed: %s", err))
+	}
+	log.Printf(">>> read key event: %v, %+v", buf, ke)
 }
 
 func (s *Session) pointerEvent() {
@@ -430,7 +441,23 @@ func (s *Session) pointerEvent() {
 }
 
 func (s *Session) clientCutText() {
-	panic("not implemented")
+	log.Println("handle clientCutText")
+	err := s.SkipBytes(3)
+	if err != nil {
+		panic(fmt.Errorf("skip padding failed: %s", err))
+	}
+	l, err := s.ReadUint32()
+	if err != nil {
+		panic(fmt.Errorf("read clientcut text length failed: %s", err))
+	}
+
+	buf := make([]byte, l)
+	_, err = s.ReadFull(buf)
+	if err != nil {
+		panic(fmt.Errorf("read clientcut text failed: %s", err))
+	}
+
+	log.Printf(">>> read clientcut text: %v, %s", buf, buf)
 }
 
 func (s *Session) setColorMapEntries() {
