@@ -37,9 +37,9 @@ func (pf *PixelFormat) Bytes() []byte {
 	return buf.Bytes()
 }
 
-func NewPixelFormat(data []byte) *PixelFormat {
+func NewPixelFormat(data []byte) (*PixelFormat, error) {
 	pf := &PixelFormat{}
 	reader := bytes.NewReader(data)
-	binary.Read(reader, binary.BigEndian, pf)
-	return pf
+	err := binary.Read(reader, binary.BigEndian, pf)
+	return pf, err
 }

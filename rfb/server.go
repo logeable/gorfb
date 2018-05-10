@@ -40,7 +40,7 @@ type Server struct {
 	sessions      map[string]*Session
 	listener      net.Listener
 	defaultPF     *types.PixelFormat
-	encodings     []types.Encoding
+	encodings     types.Encodings
 }
 
 func (s *Server) ListenAndServe(addr string) error {

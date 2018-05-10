@@ -12,3 +12,5 @@ const (
 	ENCCursorPseudo      = -239
 	ENCDesktopSizePseudo = -223
 )
+
+type Encodings []Encoding

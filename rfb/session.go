@@ -351,7 +351,10 @@ func (s *Session) setPixelFormat() {
 	if err != nil {
 		panic(fmt.Errorf("read pixel format failed: %s", err))
 	}
-	pf := types.NewPixelFormat(buf)
+	pf, err := types.NewPixelFormat(buf)
+	if err != nil {
+		panic(fmt.Errorf("new pixel format failed: %s", err))
+	}
 	s.setServerPixelFormat(pf)
 	log.Printf(">>> read pixel format: %v, %+v", buf, pf)
 
@@ -360,11 +363,11 @@ func (s *Session) setPixelFormat() {
 	}
 }
 
-func (s *Session) setServerEncodings(encodings []types.Encoding) {
+func (s *Session) setServerEncodings(encodings types.Encodings) {
 	s.server.encodings = encodings
 }
 
-func (s *Session) serverEncodings() []types.Encoding {
+func (s *Session) serverEncodings() types.Encodings {
 	return s.server.encodings
 }
 
@@ -381,7 +384,7 @@ func (s *Session) setEncodings() {
 	}
 	log.Printf("<<< read number of encodings: %d", encLen)
 
-	encodings := make([]types.Encoding, encLen)
+	encodings := make(types.Encodings, encLen)
 	for i := uint16(0); i < encLen; i++ {
 		enc, err := s.ReadInt32()
 		if err != nil {
@@ -389,11 +392,23 @@ func (s *Session) setEncodings() {
 		}
 		encodings[i] = types.Encoding(enc)
 	}
+	s.setServerEncodings(encodings)
 	log.Printf("<<< read encodings: %v", encodings)
 }
 
 func (s *Session) framebufferUpdateRequest() {
-	panic("not implemented")
+	log.Println("handle framebufferUpdateRequest")
+	buf := make([]byte, 9)
+	_, err := s.ReadFull(buf)
+	if err != nil {
+		panic(fmt.Errorf("read framebuffer update request failed: %s", err))
+	}
+
+	fbur, err := types.NewFramebufferUpdateRequest(buf)
+	if err != nil {
+		panic(fmt.Errorf("new framebuffer update request failed: %s", err))
+	}
+	log.Printf(">>> read framebuffer update request: %v, %+v", buf, fbur)
 }
 
 func (s *Session) keyEvent() {
@@ -401,7 +416,17 @@ func (s *Session) keyEvent() {
 }
 
 func (s *Session) pointerEvent() {
-	panic("not implemented")
+	log.Println("handle pointerEvent")
+	buf := make([]byte, 5)
+	_, err := s.ReadFull(buf)
+	if err != nil {
+		panic(fmt.Errorf("read pointer event failed: %s", err))
+	}
+	pe, err := types.NewPointerEvent(buf)
+	if err != nil {
+		panic(fmt.Errorf("new pointer event failed: %s", err))
+	}
+	log.Printf("<<< read pointer event: %v, %+v", buf, pe)
 }
 
 func (s *Session) clientCutText() {
