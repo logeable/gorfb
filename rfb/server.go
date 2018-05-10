@@ -7,15 +7,29 @@ import (
 	"net"
 
 	"github.com/google/uuid"
+	"github.com/logeable/gorfb/rfb/types"
 )
 
 func NewServer() *Server {
 	return &Server{
 		Major:  3,
 		Minor:  8,
-		Width:  100,
-		Height: 100,
+		Width:  800,
+		Height: 600,
 		Name:   "RFB Server",
+		defaultPF: &types.PixelFormat{
+			// 8, 16, 32
+			BitsPerPixel:  32,
+			Depth:         32,
+			BigEndianFlag: 1,
+			TrueColorFlag: 1,
+			RedMax:        255,
+			GreenMax:      255,
+			BlueMax:       255,
+			RedShift:      16,
+			GreenShift:    8,
+			BlueShift:     0,
+		},
 	}
 }
 
@@ -25,6 +39,8 @@ type Server struct {
 	Name          string
 	sessions      map[string]*Session
 	listener      net.Listener
+	defaultPF     *types.PixelFormat
+	encodings     []types.Encoding
 }
 
 func (s *Server) ListenAndServe(addr string) error {

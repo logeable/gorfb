@@ -13,12 +13,13 @@ import (
 	"path/filepath"
 
 	"strings"
+
+	"github.com/logeable/gorfb/rfb/types"
 )
 
 const (
 	protocolVersionFormat = "RFB %03d.%03d\n"
 	passwdFile            = ".rfbpasswd"
-	keyLen                = 8
 )
 
 var (
@@ -27,7 +28,7 @@ var (
 
 type Session struct {
 	Major, Minor int
-	securityType SecurityType
+	securityType types.SecurityType
 	ID           string
 	conn         net.Conn
 	shared       uint8
@@ -36,6 +37,36 @@ type Session struct {
 
 func (s *Session) ReadFull(buf []byte) (int, error) {
 	return io.ReadFull(s.conn, buf)
+}
+
+func (s *Session) ReadUint8() (uint8, error) {
+	var r uint8
+	err := binary.Read(s.conn, binary.BigEndian, &r)
+	return r, err
+}
+
+func (s *Session) ReadUint16() (uint16, error) {
+	var r uint16
+	err := binary.Read(s.conn, binary.BigEndian, &r)
+	return r, err
+}
+
+func (s *Session) ReadUint32() (uint32, error) {
+	var r uint32
+	err := binary.Read(s.conn, binary.BigEndian, &r)
+	return r, err
+}
+
+func (s *Session) ReadInt32() (int32, error) {
+	var r int32
+	err := binary.Read(s.conn, binary.BigEndian, &r)
+	return r, err
+}
+
+func (s *Session) SkipBytes(n int) error {
+	buf := make([]byte, n)
+	_, err := io.ReadFull(s.conn, buf)
+	return err
 }
 
 func (s *Session) Write(buf []byte) (int, error) {
@@ -100,13 +131,14 @@ func (s *Session) checkCredential(challenge, response []byte) bool {
 		panic(fmt.Errorf("read passwd failed: %s", err))
 	}
 
-	key := make([]byte, keyLen)
+	keyBuf := make([]byte, 8)
+
 	for i := 0; i < len(passwd); i++ {
 		// https://www.vidarholen.net/contents/junk/vnc.html
-		key[i] = ReverseBits(passwd[i])
+		keyBuf[i] = ReverseBits(passwd[i])
 	}
 
-	encrypted, err := DesEncrypt(key, challenge)
+	encrypted, err := DesEncrypt(keyBuf, challenge)
 	if err != nil {
 		panic(fmt.Errorf("des encrypt failed: %s", err))
 	}
@@ -128,7 +160,7 @@ func (s *Session) readPasswd() ([]byte, error) {
 
 func (s *Session) securityHandshake() {
 
-	sts := []byte{byte(stInvalid), byte(stNone), byte(stVNCAuthentication)}
+	sts := []byte{byte(types.STInvalid), byte(types.STNone), byte(types.STVNCAuthentication)}
 
 	buf := make([]byte, len(sts)+1)
 	buf[0] = byte(len(sts))
@@ -149,14 +181,14 @@ func (s *Session) securityHandshake() {
 	}
 	log.Printf("<<< read security types: %v", buf)
 
-	st := SecurityType(buf[0])
+	st := types.SecurityType(buf[0])
 	s.securityType = st
 	log.Printf("client security type: %d", s.securityType)
 
 	var failedReson error = nil
-	if st == stNone {
+	if st == types.STNone {
 		// pass to security type result handshake
-	} else if st == stVNCAuthentication {
+	} else if st == types.STVNCAuthentication {
 		challenge := make([]byte, 16)
 		_, err := rand.Read(challenge)
 		if err != nil {
@@ -196,9 +228,9 @@ func (s *Session) securityHandshake() {
 }
 
 func (s *Session) securityResultHandshake(reason error) {
-	stres := strOk
+	stres := types.STROk
 	if reason != nil {
-		stres = strFailed
+		stres = types.STRFailed
 	}
 
 	err := s.WriteUint32(uint32(stres))
@@ -206,7 +238,7 @@ func (s *Session) securityResultHandshake(reason error) {
 		panic(fmt.Errorf("send security result failed:%s", err))
 	}
 	log.Printf(">>> send security result: %d", stres)
-	if stres == strFailed {
+	if stres == types.STRFailed {
 		err := s.WriteUint32(uint32(len(reason.Error())))
 		if err != nil {
 			panic(fmt.Errorf("send security type result error msg failed: %s", err))
@@ -216,7 +248,7 @@ func (s *Session) securityResultHandshake(reason error) {
 			panic(fmt.Errorf("send security type result error msg failed: %s", err))
 		}
 		panic(fmt.Errorf("security handshake result failed: %s", reason))
-	} else if stres == strOk {
+	} else if stres == types.STROk {
 		// pass to the initialization phase
 	} else {
 		panic(fmt.Errorf("not supported security type result: %d", stres))
@@ -240,29 +272,25 @@ func (s *Session) clientInit() {
 	s.shared = buf[0]
 	if s.shared == 0 {
 		log.Println("clean other sessions due to shared flag is zero")
-		go s.server.CleanSessionExcept(s)
+		go s.CleanOtherSessions()
 	}
 }
 
+func (s *Session) CleanOtherSessions() {
+	s.server.CleanSessionExcept(s)
+}
+
+func (s *Session) Server() *Server {
+	return s.server
+}
+
 func (s *Session) serverInit() {
-	sim := &ServerInitMessage{
-		Width:  s.server.Width,
-		Height: s.server.Height,
-		ServerPixelFormat: &PixelFormat{
-			// 8, 16, 32
-			BitsPerPixel:  32,
-			Depth:         32,
-			BigEndianFlag: 1,
-			TrueColorFlag: 1,
-			RedMax:        255,
-			GreenMax:      255,
-			BlueMax:       255,
-			RedShift:      16,
-			GreenShift:    8,
-			BlueShift:     0,
-		},
-		NameLength: uint32(len(s.server.Name)),
-		Name:       []byte(s.server.Name),
+	sim := &types.ServerInitMessage{
+		Width:             s.Server().Width,
+		Height:            s.Server().Height,
+		ServerPixelFormat: s.Server().defaultPF,
+		NameLength:        uint32(len(s.Server().Name)),
+		Name:              []byte(s.Server().Name),
 	}
 	simBytes := sim.Bytes()
 	_, err := s.Write(simBytes)
@@ -274,12 +302,113 @@ func (s *Session) serverInit() {
 
 func (s *Session) ProcessNormalProtocol() {
 
-	cmt := make([]byte, 1)
 	for {
-		_, err := s.ReadFull(cmt)
+		u8, err := s.ReadUint8()
 		if err != nil {
 			panic(fmt.Errorf("read client message type failed: %s", err))
 		}
-		log.Printf("<<< read client message type: %v", cmt)
+
+		cmt := types.ClientMessageType(u8)
+		log.Printf("<<< read client message type: %d <%s>", u8, types.TranslateClientMessageType(cmt))
+
+		switch cmt {
+		case types.CMTSetPixelFormat:
+			s.setPixelFormat()
+		case types.CMTSetEncodings:
+			s.setEncodings()
+		case types.CMTFramebufferUpdateRequest:
+			s.framebufferUpdateRequest()
+		case types.CMTKeyEvent:
+			s.keyEvent()
+		case types.CMTPointerEvent:
+			s.pointerEvent()
+		case types.CMTClientCutText:
+			s.clientCutText()
+		default:
+			panic(fmt.Errorf("unknown client message type: %d", cmt))
+		}
 	}
+}
+
+func (s *Session) serverPixelFormat() *types.PixelFormat {
+	return s.server.defaultPF
+}
+
+func (s *Session) setServerPixelFormat(pf *types.PixelFormat) {
+	s.server.defaultPF = pf
+}
+
+func (s *Session) setPixelFormat() {
+	log.Println("handle SetPixelFormat")
+	const paddingLen = 3
+	err := s.SkipBytes(paddingLen)
+	if err != nil {
+		panic(fmt.Errorf("skip padding failed: %s", err))
+	}
+
+	buf := make([]byte, 16)
+	_, err = s.ReadUint16()
+	if err != nil {
+		panic(fmt.Errorf("read pixel format failed: %s", err))
+	}
+	pf := types.NewPixelFormat(buf)
+	s.setServerPixelFormat(pf)
+	log.Printf(">>> read pixel format: %v, %+v", buf, pf)
+
+	if pf.TrueColorFlag == 0 {
+		s.setColorMapEntries()
+	}
+}
+
+func (s *Session) setServerEncodings(encodings []types.Encoding) {
+	s.server.encodings = encodings
+}
+
+func (s *Session) serverEncodings() []types.Encoding {
+	return s.server.encodings
+}
+
+func (s *Session) setEncodings() {
+	log.Println("handle setEncodings")
+	err := s.SkipBytes(1)
+	if err != nil {
+		panic(fmt.Errorf("skip padding failed :%s", err))
+	}
+
+	encLen, err := s.ReadUint16()
+	if err != nil {
+		panic(fmt.Errorf("read number of encodings failed: %s", err))
+	}
+	log.Printf("<<< read number of encodings: %d", encLen)
+
+	encodings := make([]types.Encoding, encLen)
+	for i := uint16(0); i < encLen; i++ {
+		enc, err := s.ReadInt32()
+		if err != nil {
+			panic(fmt.Errorf("read encodings failed: %s", err))
+		}
+		encodings[i] = types.Encoding(enc)
+	}
+	log.Printf("<<< read encodings: %v", encodings)
+}
+
+func (s *Session) framebufferUpdateRequest() {
+	panic("not implemented")
+}
+
+func (s *Session) keyEvent() {
+	panic("not implemented")
+}
+
+func (s *Session) pointerEvent() {
+	panic("not implemented")
+}
+
+func (s *Session) clientCutText() {
+	panic("not implemented")
+}
+
+func (s *Session) setColorMapEntries() {
+	// todo: implement setColorMapEntries
+	panic("not implemented")
 }
