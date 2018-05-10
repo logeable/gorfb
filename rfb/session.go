@@ -19,7 +19,7 @@ import (
 
 const (
 	protocolVersionFormat = "RFB %03d.%03d\n"
-	passwdFile            = ".fake_rfb_passwd"
+	passwdFile            = ".rfbpasswd"
 	keyLen                = 8
 )
 
