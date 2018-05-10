@@ -11,15 +11,20 @@ import (
 
 func NewServer() *Server {
 	return &Server{
-		Major: 3,
-		Minor: 8,
+		Major:  3,
+		Minor:  8,
+		Width:  100,
+		Height: 100,
+		Name:   "RFB Server",
 	}
 }
 
 type Server struct {
-	Major, Minor int
-	sessions     map[string]*Session
-	listener     net.Listener
+	Major, Minor  int
+	Width, Height uint16
+	Name          string
+	sessions      map[string]*Session
+	listener      net.Listener
 }
 
 func (s *Server) ListenAndServe(addr string) error {
@@ -46,6 +51,15 @@ func (s *Server) CleanSession(session *Session) {
 	session.conn.Close()
 }
 
+func (s *Server) CleanSessionExcept(session *Session) {
+	for _, sess := range s.sessions {
+		if sess == session {
+			continue
+		}
+		s.CleanSession(session)
+	}
+}
+
 func (s *Server) Shutdown(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
@@ -65,6 +79,8 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 func (s *Server) Serve(session *Session) {
 	session.Handshake(s.Major, s.Minor)
+	session.Initialization()
+	session.ProcessNormalProtocol()
 }
 
 func (s *Server) AddSession(session *Session) {
@@ -79,8 +95,9 @@ func (s *Server) HandleConnection(conn net.Conn) {
 	log.Printf("new connection: %s", conn.RemoteAddr())
 
 	session := &Session{
-		ID:   uuid.New().String(),
-		conn: conn,
+		ID:     uuid.New().String(),
+		conn:   conn,
+		server: s,
 	}
 	defer s.CleanSession(session)
 

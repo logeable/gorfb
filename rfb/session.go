@@ -13,8 +13,6 @@ import (
 	"path/filepath"
 
 	"strings"
-
-	"github.com/logeable/gorfb/utils"
 )
 
 const (
@@ -32,6 +30,8 @@ type Session struct {
 	securityType SecurityType
 	ID           string
 	conn         net.Conn
+	shared       uint8
+	server       *Server
 }
 
 func (s *Session) ReadFull(buf []byte) (int, error) {
@@ -44,6 +44,14 @@ func (s *Session) Write(buf []byte) (int, error) {
 
 func (s *Session) WriteString(str string) (int, error) {
 	return s.conn.Write([]byte(str))
+}
+
+func (s *Session) WriteUint8(u uint8) error {
+	return binary.Write(s.conn, binary.BigEndian, u)
+}
+
+func (s *Session) WriteUint16(u uint16) error {
+	return binary.Write(s.conn, binary.BigEndian, u)
 }
 
 func (s *Session) WriteUint32(u uint32) error {
@@ -95,10 +103,10 @@ func (s *Session) checkCredential(challenge, response []byte) bool {
 	key := make([]byte, keyLen)
 	for i := 0; i < len(passwd); i++ {
 		// https://www.vidarholen.net/contents/junk/vnc.html
-		key[i] = utils.ReverseBits(passwd[i])
+		key[i] = ReverseBits(passwd[i])
 	}
 
-	encrypted, err := utils.DesEncrypt(key, challenge)
+	encrypted, err := DesEncrypt(key, challenge)
 	if err != nil {
 		panic(fmt.Errorf("des encrypt failed: %s", err))
 	}
@@ -214,4 +222,63 @@ func (s *Session) securityResultHandshake(reason error) {
 		panic(fmt.Errorf("not supported security type result: %d", stres))
 	}
 	log.Println("security type negotiation successful")
+}
+
+func (s *Session) Initialization() {
+	s.clientInit()
+	s.serverInit()
+}
+
+func (s *Session) clientInit() {
+	buf := make([]byte, 1)
+	_, err := s.ReadFull(buf)
+	if err != nil {
+		panic(fmt.Errorf("read client init message failed: %s", err))
+	}
+	log.Printf("<<< read client init message: %v", buf)
+	// if shared flag is zero, disconnect all other connections
+	s.shared = buf[0]
+	if s.shared == 0 {
+		log.Println("clean other sessions due to shared flag is zero")
+		go s.server.CleanSessionExcept(s)
+	}
+}
+
+func (s *Session) serverInit() {
+	sim := &ServerInitMessage{
+		Width:  s.server.Width,
+		Height: s.server.Height,
+		ServerPixelFormat: &PixelFormat{
+			// 8, 16, 32
+			BitsPerPixel:  32,
+			Depth:         32,
+			BigEndianFlag: 1,
+			TrueColorFlag: 1,
+			RedMax:        255,
+			GreenMax:      255,
+			BlueMax:       255,
+			RedShift:      16,
+			GreenShift:    8,
+			BlueShift:     0,
+		},
+		NameLength: uint32(len(s.server.Name)),
+		Name:       []byte(s.server.Name),
+	}
+	_, err := s.Write(sim.Bytes())
+	if err != nil {
+		panic(fmt.Errorf("send server init message failed: %s", err))
+	}
+	log.Printf(">>> send server init message: %v", sim)
+}
+
+func (s *Session) ProcessNormalProtocol() {
+
+	cmt := make([]byte, 1)
+	for {
+		_, err := s.ReadFull(cmt)
+		if err != nil {
+			panic(fmt.Errorf("read client message type failed: %s", err))
+		}
+		log.Printf("<<< read client message type: %v", cmt)
+	}
 }

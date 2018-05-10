@@ -1,4 +1,4 @@
-package utils
+package rfb
 
 import (
 	"crypto/des"
