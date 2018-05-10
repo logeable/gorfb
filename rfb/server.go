@@ -58,7 +58,7 @@ func (s *Server) ListenAndServe(addr string) error {
 		if err != nil {
 			return fmt.Errorf("accept failed: %s", err)
 		}
-		s.HandleConnection(conn)
+		go s.HandleConnection(conn)
 	}
 }
 
