@@ -15,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/logeable/gorfb/utils"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -25,7 +24,7 @@ const (
 )
 
 var (
-	keyErr = errors.New("key invalid")
+	keyErr = fmt.Errorf("key invalid")
 )
 
 type Session struct {
