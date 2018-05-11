@@ -6,25 +6,22 @@ import (
 	"fmt"
 )
 
-type U8 uint8
-type U16 uint16
-type U32 uint32
-type S32 int32
+type Pad1 uint8
+type Pad2 uint16
+type Pad3 [3]uint8
 
 type PixelFormat struct {
-	BitsPerPixel  U8
-	Depth         U8
-	BigEndianFlag U8
-	TrueColorFlag U8
-	RedMax        U16
-	GreenMax      U16
-	BlueMax       U16
-	RedShift      U8
-	GreenShift    U8
-	BlueShift     U8
-	_             U8
-	_             U8
-	_             U8
+	BitsPerPixel uint8
+	Depth        uint8
+	BigEndian    uint8
+	TrueColor    uint8
+	RedMax       uint16
+	GreenMax     uint16
+	BlueMax      uint16
+	RedShift     uint8
+	GreenShift   uint8
+	BlueShift    uint8
+	_            Pad3
 }
 
 func (pf *PixelFormat) Serialize() ([]byte, error) {
@@ -51,4 +48,43 @@ func (pf *PixelFormat) MustDeserialize(data []byte) {
 	if err != nil {
 		panic(fmt.Errorf("PixelFormat deserialize failed: %v", data))
 	}
+}
+
+type Encoding int32
+
+// encoding types
+const (
+	ENCRaw Encoding = iota
+	ENCCopyRect
+	ENCRRE
+	ENCHextile           = 5
+	ENCTRLE              = 15
+	ENCZRLE              = 16
+	ENCCursorPseudo      = -239
+	ENCDesktopSizePseudo = -223
+)
+
+type Encodings []Encoding
+
+type Rectangle struct {
+	X        uint16
+	Y        uint16
+	Width    uint16
+	Height   uint16
+	Encoding Encoding
+}
+
+type Rectangles []Rectangle
+
+type RGBMapColor struct {
+	Red   uint16
+	Green uint16
+	Blue  uint16
+}
+
+type RGBMapColors []RGBMapColor
+
+type TextMsg struct {
+	Length uint32
+	Text   []uint8
 }

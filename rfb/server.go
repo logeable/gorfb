@@ -19,17 +19,18 @@ func NewServer() *Server {
 		Name:   "RFB Server",
 		defaultPF: &messages.PixelFormat{
 			// 8, 16, 32
-			BitsPerPixel:  32,
-			Depth:         32,
-			BigEndianFlag: 0,
-			TrueColorFlag: 1,
-			RedMax:        255,
-			GreenMax:      255,
-			BlueMax:       255,
-			RedShift:      16,
-			GreenShift:    8,
-			BlueShift:     0,
+			BitsPerPixel: 32,
+			Depth:        32,
+			BigEndian:    0,
+			TrueColor:    1,
+			RedMax:       255,
+			GreenMax:     255,
+			BlueMax:      255,
+			RedShift:     16,
+			GreenShift:   8,
+			BlueShift:    0,
 		},
+		securityTypes: []messages.SecurityType{messages.STNone, messages.STVNCAuthentication},
 	}
 }
 
@@ -41,6 +42,7 @@ type Server struct {
 	listener      net.Listener
 	defaultPF     *messages.PixelFormat
 	encodings     messages.Encodings
+	securityTypes messages.SecurityTypes
 }
 
 func (s *Server) ListenAndServe(addr string) error {
@@ -93,12 +95,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 }
 
-func (s *Server) Serve(session *Session) {
-	session.Handshake(s.Major, s.Minor)
-	session.Initialization()
-	session.ProcessNormalProtocol()
-}
-
 func (s *Server) AddSession(session *Session) {
 	if s.sessions == nil {
 		s.sessions = make(map[string]*Session)
@@ -127,7 +123,7 @@ func (s *Server) HandleConnection(conn net.Conn) {
 				panicChan <- r
 			}
 		}()
-		s.Serve(session)
+		session.Serve()
 		close(done)
 	}()
 

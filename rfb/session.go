@@ -2,7 +2,6 @@ package rfb
 
 import (
 	"bytes"
-	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -12,14 +11,12 @@ import (
 	"os/user"
 	"path/filepath"
 
-	"strings"
-
 	"github.com/logeable/gorfb/rfb/messages"
+	"github.com/logeable/gorfb/utils"
 )
 
 const (
-	protocolVersionFormat = "RFB %03d.%03d\n"
-	passwdFile            = ".rfbpasswd"
+	passwdFile = ".rfbpasswd"
 )
 
 var (
@@ -28,11 +25,14 @@ var (
 
 type Session struct {
 	Major, Minor int
-	securityType messages.SecurityType
 	ID           string
 	conn         net.Conn
 	shared       uint8
 	server       *Server
+}
+
+func (s *Session) Read(p []byte) (n int, err error) {
+	return s.conn.Read(p)
 }
 
 func (s *Session) ReadFull(buf []byte) (int, error) {
@@ -89,171 +89,121 @@ func (s *Session) WriteUint32(u uint32) error {
 	return binary.Write(s.conn, binary.BigEndian, u)
 }
 
-func (s *Session) Handshake(major, minor int) {
-	s.protocolVersionHandshake(major, minor)
+func (s *Session) Handshake() {
+	s.protocolVersionHandshake()
 	s.securityHandshake()
+}
+
+func (s *Session) Serve() {
+	s.Handshake()
+	s.Initialization()
+	s.ProcessNormalProtocol()
 }
 
 /*
 >>> RFB xxx.xxx\n
 <<< RFB xxx.xxx\n
 */
-func (s *Session) protocolVersionHandshake(major, minor int) {
-	serverVersion := fmt.Sprintf(protocolVersionFormat, major, minor)
-	_, err := s.WriteString(serverVersion)
-	if err != nil {
-		panic(fmt.Errorf("write server version failed: %s", err))
+func (s *Session) protocolVersionHandshake() {
+	log.Println("begin: protocol version handshake")
+	spv := &messages.HMProtocolVersion{
+		Major: s.server.Major,
+		Minor: s.server.Minor,
 	}
-	log.Printf(">>> send ProtocolVersion: %s", serverVersion)
+	spv.MustSerialize(s)
 
-	buf := make([]byte, len(serverVersion))
-	_, err = s.ReadFull(buf)
-	if err != nil {
-		panic(fmt.Errorf("read client version failed: %s", err))
-	}
-	log.Printf("<<< read ProtocolVersion: %s", string(buf))
+	cpv := &messages.HMProtocolVersion{}
+	cpv.MustDeserialize(s)
 
-	var clientMajor, clientMinor int
-	_, err = fmt.Sscanf(string(buf), protocolVersionFormat, &clientMajor, &clientMinor)
-	if err != nil {
-		panic(fmt.Errorf("scan client version failed: %s", err))
+	if cpv.Major != 3 {
+		cpv.Major = 3
 	}
-
-	if clientMajor != 3 || (clientMinor != 3 && clientMinor != 7 && clientMinor != 8) {
-		panic(fmt.Errorf("client version invalid: %s", buf))
+	if cpv.Minor != 3 && cpv.Minor != 7 && cpv.Minor != 8 {
+		cpv.Minor = 3
 	}
-	s.Major, s.Minor = clientMajor, clientMinor
+	log.Println("end: protocol version handshake")
 }
 
-func (s *Session) checkCredential(challenge, response []byte) bool {
-	passwd, err := s.readPasswd()
-	if err != nil {
-		panic(fmt.Errorf("read passwd failed: %s", err))
+func (s *Session) securityHandshake() {
+
+	avaliableSt := s.server.securityTypes
+	st := &messages.HMSecurityType{
+		Number:        uint8(len(avaliableSt)),
+		SecurityTypes: avaliableSt,
 	}
+	if st.Number == 0 {
+		reason := "the server cannot support the desired protocol version"
+		reasonMsg := messages.TextMsg{
+			Length: uint32(len(reason)),
+			Text:   []uint8(reason),
+		}
+		utils.BWrite(s, reasonMsg)
+		panic(fmt.Errorf(reason))
+	}
+	utils.BWrite(s, st)
+
+	var cst messages.HMClientSecurityType
+	utils.MustBRead(s, &cst)
+
+	err := s.authenticate(uint8(cst))
+
+	if err != nil {
+		sr := messages.HMSecurityResult{Status: messages.STRFailed}
+		utils.MustBWrite(s, sr)
+		reason := "invalid passwd"
+		msg := messages.TextMsg{Length: uint32(len(reason)), Text: []uint8(reason)}
+		utils.MustBWrite(s, msg)
+	} else {
+		sr := messages.HMSecurityResult{Status: messages.STROk}
+		utils.MustBWrite(s, sr)
+	}
+}
+
+func (s *Session) authenticate(t uint8) error {
+	switch t {
+	case messages.STNone:
+		log.Println("auth method: none")
+	case messages.STVNCAuthentication:
+		authChallenge := messages.NewVNCAuthChallengeMsg()
+		utils.MustBWrite(s, authChallenge)
+		authResp := &messages.VNCAuthResponseMsg{}
+		utils.MustBRead(s, authResp)
+		if !checkCredential([2]uint8(*authChallenge), authResp.Response) {
+			return fmt.Errorf("invalid passwd")
+		}
+	default:
+		panic(fmt.Errorf("invalid security type: %d", t))
+	}
+	return nil
+}
+
+func checkCredential(challenge, response [2]byte) bool {
+	passwd := readServerPasswd()
 
 	keyBuf := make([]byte, 8)
-
 	for i := 0; i < len(passwd); i++ {
 		// https://www.vidarholen.net/contents/junk/vnc.html
 		keyBuf[i] = ReverseBits(passwd[i])
 	}
 
-	encrypted, err := DesEncrypt(keyBuf, challenge)
+	encrypted, err := DesEncrypt(keyBuf, challenge[:])
 	if err != nil {
 		panic(fmt.Errorf("des encrypt failed: %s", err))
 	}
-	return bytes.Equal(response, encrypted)
+	return bytes.Equal(response[:], encrypted)
 }
 
-func (s *Session) readPasswd() ([]byte, error) {
+func readServerPasswd() []byte {
 	u, err := user.Current()
 	if err != nil {
-		return nil, err
+		panic(fmt.Errorf("get current use info failed: %s", err))
 	}
 	p := filepath.Join(u.HomeDir, passwdFile)
 	passwd, err := ioutil.ReadFile(p)
 	if err != nil {
-		return nil, err
+		panic(fmt.Errorf("read passwd file failed: %s", err))
 	}
-	return []byte(strings.TrimSpace(string(passwd))), nil
-}
-
-func (s *Session) securityHandshake() {
-
-	sts := []byte{byte(messages.STInvalid), byte(messages.STNone), byte(messages.STVNCAuthentication)}
-
-	buf := make([]byte, len(sts)+1)
-	buf[0] = byte(len(sts))
-	for i, t := range sts {
-		buf[i+1] = t
-	}
-
-	_, err := s.Write(buf)
-	if err != nil {
-		panic(fmt.Errorf("send security types failed: %s", err))
-	}
-	log.Printf(">>> send security types: %v", buf)
-
-	buf = make([]byte, 1)
-	_, err = s.ReadFull(buf)
-	if err != nil {
-		panic(fmt.Errorf("read client security type failed :%s", err))
-	}
-	log.Printf("<<< read security types: %v", buf)
-
-	st := messages.SecurityType(buf[0])
-	s.securityType = st
-	log.Printf("client security type: %d", s.securityType)
-
-	var failedReson error = nil
-	if st == messages.STNone {
-		// pass to security type result handshake
-	} else if st == messages.STVNCAuthentication {
-		challenge := make([]byte, 16)
-		_, err := rand.Read(challenge)
-		if err != nil {
-			panic(fmt.Errorf("generate VNC authentication challenge failed: %s", err))
-		}
-
-		_, err = s.Write(challenge)
-		if err != nil {
-			panic(fmt.Errorf("send VNC authentication challenge failed: %s", err))
-		}
-		log.Printf(">>> send VNC authentication challenge: %v", challenge)
-
-		response := make([]byte, 16)
-		_, err = s.ReadFull(response)
-		if err != nil {
-			panic(fmt.Errorf("read VNC authentication response failed: %s", err))
-		}
-		log.Printf("<<< read VNC authentication response: %v", response)
-
-		if !s.checkCredential(challenge, response) {
-			log.Printf("check credential failed")
-			failedReson = keyErr
-		}
-	} else {
-		msg := "the server cannot support the desired protocol version"
-		err := s.WriteUint32(uint32(len(msg)))
-		if err != nil {
-			panic(fmt.Errorf("send security type error msg failed: %s", err))
-		}
-		_, err = s.Write([]byte(msg))
-		if err != nil {
-			panic(fmt.Errorf("send security type error msg failed: %s", err))
-		}
-		panic(fmt.Errorf("security handshake failed: %s", msg))
-	}
-	s.securityResultHandshake(failedReson)
-}
-
-func (s *Session) securityResultHandshake(reason error) {
-	stres := messages.STROk
-	if reason != nil {
-		stres = messages.STRFailed
-	}
-
-	err := s.WriteUint32(uint32(stres))
-	if err != nil {
-		panic(fmt.Errorf("send security result failed:%s", err))
-	}
-	log.Printf(">>> send security result: %d", stres)
-	if stres == messages.STRFailed {
-		err := s.WriteUint32(uint32(len(reason.Error())))
-		if err != nil {
-			panic(fmt.Errorf("send security type result error msg failed: %s", err))
-		}
-		_, err = s.Write([]byte(reason.Error()))
-		if err != nil {
-			panic(fmt.Errorf("send security type result error msg failed: %s", err))
-		}
-		panic(fmt.Errorf("security handshake result failed: %s", reason))
-	} else if stres == messages.STROk {
-		// pass to the initialization phase
-	} else {
-		panic(fmt.Errorf("not supported security type result: %d", stres))
-	}
-	log.Println("security type negotiation successful")
+	return bytes.TrimSpace(passwd)
 }
 
 func (s *Session) Initialization() {
@@ -285,7 +235,7 @@ func (s *Session) Server() *Server {
 }
 
 func (s *Session) serverInit() {
-	sim := &messages.ServerInitMessage{
+	sim := &messages.ServerInitMsg{
 		Width:             s.Server().Width,
 		Height:            s.Server().Height,
 		ServerPixelFormat: *s.Server().defaultPF,
@@ -308,7 +258,7 @@ func (s *Session) ProcessNormalProtocol() {
 			panic(fmt.Errorf("read client message type failed: %s", err))
 		}
 
-		cmt := messages.ClientMessageType(u8)
+		cmt := messages.ClientMsgType(u8)
 		log.Printf("<<< read client message type: %d <%s>", u8, messages.TranslateClientMessageType(cmt))
 
 		switch cmt {
