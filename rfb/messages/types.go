@@ -1,9 +1,10 @@
 package messages
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
+	"io"
+
+	"github.com/logeable/gorfb/utils"
 )
 
 type Pad1 uint8
@@ -24,37 +25,11 @@ type PixelFormat struct {
 	_            Pad3
 }
 
-func (pf *PixelFormat) Serialize() ([]byte, error) {
-	var buf bytes.Buffer
-	err := binary.Write(&buf, binary.BigEndian, pf)
-	return buf.Bytes(), err
-}
-
-func (pf *PixelFormat) MustSerialize() []byte {
-	bs, err := pf.Serialize()
-	if err != nil {
-		panic(fmt.Errorf("PixelFormat serial failed: %+v", pf))
-	}
-	return bs
-}
-
-func (pf *PixelFormat) Deserialize(data []byte) error {
-	r := bytes.NewReader(data)
-	return binary.Read(r, binary.BigEndian, pf)
-}
-
-func (pf *PixelFormat) MustDeserialize(data []byte) {
-	err := pf.Deserialize(data)
-	if err != nil {
-		panic(fmt.Errorf("PixelFormat deserialize failed: %v", data))
-	}
-}
-
 type Encoding int32
 
 // encoding types
 const (
-	ENCRaw Encoding = iota
+	ENCRaw int32 = iota
 	ENCCopyRect
 	ENCRRE
 	ENCHextile           = 5
@@ -87,4 +62,14 @@ type RGBMapColors []RGBMapColor
 type TextMsg struct {
 	Length uint32
 	Text   []uint8
+}
+
+func (m *TextMsg) Serialize(w io.Writer) error {
+	return utils.BWrite(w, m.Length, m.Text)
+}
+
+func (m *TextMsg) MustSerialize(w io.Writer) {
+	if err := m.Serialize(w); err != nil {
+		panic(fmt.Errorf("serialize TextMsg failed: %s", err))
+	}
 }

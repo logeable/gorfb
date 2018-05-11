@@ -1,10 +1,8 @@
 package messages
 
-type ServerMsgType uint8
-
 // server message types
 const (
-	SMTFramebufferUpdate ServerMsgType = iota
+	SMTFramebufferUpdate uint8 = iota
 	SMTSetColorMapEntries
 	SMTBell
 	SMTServerCutText
@@ -16,7 +14,7 @@ type SMFrameBufferUpdate struct {
 	Type       uint8
 	_          Pad1
 	Number     uint16
-	Rectangles Rectangles
+	Rectangles []Rectangle
 }
 
 type SMSetColorMapEntries struct {
@@ -25,7 +23,7 @@ type SMSetColorMapEntries struct {
 	_            Pad1
 	FirstColor   uint16
 	Number       uint16
-	RGBMapColors RGBMapColors
+	RGBMapColors []RGBMapColor
 }
 
 type SMBell struct {
@@ -38,5 +36,5 @@ type SMServerCutText struct {
 	Type   uint8
 	_      Pad3
 	Length uint32
-	Text   uint8
+	Text   []uint8
 }

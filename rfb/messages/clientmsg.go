@@ -1,10 +1,15 @@
 package messages
 
-type ClientMsgType uint8
+import (
+	"fmt"
+	"io"
+
+	"github.com/logeable/gorfb/utils"
+)
 
 // client message types
 const (
-	CMTSetPixelFormat ClientMsgType = iota
+	CMTSetPixelFormat uint8 = iota
 	_
 	CMTSetEncodings
 	CMTFramebufferUpdateRequest
@@ -15,7 +20,7 @@ const (
 
 // client memssage types text
 var (
-	clientMsgTypeText = map[ClientMsgType]string{
+	clientMsgTypeText = map[uint8]string{
 		CMTSetPixelFormat:           "SetPixelFormat",
 		CMTSetEncodings:             "SetEncodings",
 		CMTFramebufferUpdateRequest: "FramebufferUpdateRequest",
@@ -26,7 +31,7 @@ var (
 )
 
 // translate function
-func TranslateClientMessageType(t ClientMsgType) string {
+func TranslateClientMessageType(t uint8) string {
 	r, ok := clientMsgTypeText[t]
 	if ok {
 		return r
@@ -46,9 +51,24 @@ type CMSetPixelFormat struct {
 type CMSetEncodings struct {
 	// 2
 	Type      uint8
-	_         Pad1
+	Pad       Pad1
 	Number    uint16
 	Encodings Encodings
+}
+
+func (m *CMSetEncodings) Deserialize(r io.Reader) error {
+	err := utils.BRead(r, &m.Type, &m.Pad, &m.Number)
+	if err != nil {
+		return err
+	}
+	m.Encodings = make(Encodings, m.Number)
+	return utils.BRead(r, m.Encodings)
+}
+
+func (m *CMSetEncodings) MustDeserialize(r io.Reader) {
+	if err := m.Deserialize(r); err != nil {
+		panic(fmt.Errorf("deserialize SetEncodings failed: %s", err))
+	}
 }
 
 // client message type: FramebufferUpdateRequest
@@ -84,7 +104,22 @@ type CMPointerEvent struct {
 type CMClientCutText struct {
 	// 6
 	Type   uint8
-	_      Pad3
+	Pad    Pad3
 	Length uint32
-	Text   uint8
+	Text   []uint8
+}
+
+func (m *CMClientCutText) Deserialize(r io.Reader) error {
+	err := utils.BRead(r, &m.Type, &m.Pad, &m.Length)
+	if err != nil {
+		return err
+	}
+	m.Text = make([]uint8, m.Length)
+	return utils.BRead(r, m.Text)
+}
+
+func (m *CMClientCutText) MustDeserialize(r io.Reader) {
+	if err := m.Deserialize(r); err != nil {
+		panic(fmt.Errorf("deserialize ClientCutText failed: %s", err))
+	}
 }

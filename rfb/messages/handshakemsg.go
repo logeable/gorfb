@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+
+	"github.com/logeable/gorfb/utils"
 )
 
 const (
@@ -43,9 +45,22 @@ type HMSecurityType struct {
 	SecurityTypes SecurityTypes
 }
 
-type SecurityTypes []uint8
+func (m *HMSecurityType) Serialize(w io.Writer) error {
+	return utils.BWrite(w, m.Number, m.SecurityTypes)
+}
 
-type HMClientSecurityType uint8
+func (m *HMSecurityType) MustSerialize(w io.Writer) {
+	if err := m.Serialize(w); err != nil {
+		panic(fmt.Errorf("serialize SecurityType failed: %s", err))
+	}
+}
+
+type SecurityType uint8
+type SecurityTypes []SecurityType
+
+type HMClientSecurityType struct {
+	Type SecurityType
+}
 
 /*
 	+--------+--------------------+
@@ -57,7 +72,7 @@ type HMClientSecurityType uint8
 	+--------+--------------------+
 */
 const (
-	STInvalid uint8 = iota
+	STInvalid SecurityType = iota
 	STNone
 	STVNCAuthentication
 )
@@ -80,17 +95,19 @@ type HMSecurityResult struct {
 	Status uint32
 }
 
-type VNCAuthChallenge [2]uint8
+type HMVNCAuthChallenge struct {
+	Challenge [2]uint8
+}
 
-func NewVNCAuthChallengeMsg() *VNCAuthChallenge {
-	msg := &VNCAuthChallenge{}
-	_, err := rand.Read(msg[:])
+func NewVNCAuthChallengeMsg() *HMVNCAuthChallenge {
+	msg := &HMVNCAuthChallenge{}
+	_, err := rand.Read(msg.Challenge[:])
 	if err != nil {
 		panic(fmt.Errorf("generate VNC authentication challenge failed: %s", err))
 	}
 	return msg
 }
 
-type VNCAuthResponseMsg struct {
+type HMVNCAuthResponseMsg struct {
 	Response [2]uint8
 }

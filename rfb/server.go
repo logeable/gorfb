@@ -6,6 +6,8 @@ import (
 	"log"
 	"net"
 
+	"bufio"
+
 	"github.com/google/uuid"
 	"github.com/logeable/gorfb/rfb/messages"
 )
@@ -110,6 +112,7 @@ func (s *Server) HandleConnection(conn net.Conn) {
 		ID:     uuid.New().String(),
 		conn:   conn,
 		server: s,
+		bufrw:  bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn)),
 	}
 	defer s.CleanSession(session)
 
