@@ -14,7 +14,7 @@ import (
 
 	"strings"
 
-	"github.com/logeable/gorfb/rfb/types"
+	"github.com/logeable/gorfb/rfb/messages"
 )
 
 const (
@@ -28,7 +28,7 @@ var (
 
 type Session struct {
 	Major, Minor int
-	securityType types.SecurityType
+	securityType messages.SecurityType
 	ID           string
 	conn         net.Conn
 	shared       uint8
@@ -160,7 +160,7 @@ func (s *Session) readPasswd() ([]byte, error) {
 
 func (s *Session) securityHandshake() {
 
-	sts := []byte{byte(types.STInvalid), byte(types.STNone), byte(types.STVNCAuthentication)}
+	sts := []byte{byte(messages.STInvalid), byte(messages.STNone), byte(messages.STVNCAuthentication)}
 
 	buf := make([]byte, len(sts)+1)
 	buf[0] = byte(len(sts))
@@ -181,14 +181,14 @@ func (s *Session) securityHandshake() {
 	}
 	log.Printf("<<< read security types: %v", buf)
 
-	st := types.SecurityType(buf[0])
+	st := messages.SecurityType(buf[0])
 	s.securityType = st
 	log.Printf("client security type: %d", s.securityType)
 
 	var failedReson error = nil
-	if st == types.STNone {
+	if st == messages.STNone {
 		// pass to security type result handshake
-	} else if st == types.STVNCAuthentication {
+	} else if st == messages.STVNCAuthentication {
 		challenge := make([]byte, 16)
 		_, err := rand.Read(challenge)
 		if err != nil {
@@ -228,9 +228,9 @@ func (s *Session) securityHandshake() {
 }
 
 func (s *Session) securityResultHandshake(reason error) {
-	stres := types.STROk
+	stres := messages.STROk
 	if reason != nil {
-		stres = types.STRFailed
+		stres = messages.STRFailed
 	}
 
 	err := s.WriteUint32(uint32(stres))
@@ -238,7 +238,7 @@ func (s *Session) securityResultHandshake(reason error) {
 		panic(fmt.Errorf("send security result failed:%s", err))
 	}
 	log.Printf(">>> send security result: %d", stres)
-	if stres == types.STRFailed {
+	if stres == messages.STRFailed {
 		err := s.WriteUint32(uint32(len(reason.Error())))
 		if err != nil {
 			panic(fmt.Errorf("send security type result error msg failed: %s", err))
@@ -248,7 +248,7 @@ func (s *Session) securityResultHandshake(reason error) {
 			panic(fmt.Errorf("send security type result error msg failed: %s", err))
 		}
 		panic(fmt.Errorf("security handshake result failed: %s", reason))
-	} else if stres == types.STROk {
+	} else if stres == messages.STROk {
 		// pass to the initialization phase
 	} else {
 		panic(fmt.Errorf("not supported security type result: %d", stres))
@@ -285,7 +285,7 @@ func (s *Session) Server() *Server {
 }
 
 func (s *Session) serverInit() {
-	sim := &types.ServerInitMessage{
+	sim := &messages.ServerInitMessage{
 		Width:             s.Server().Width,
 		Height:            s.Server().Height,
 		ServerPixelFormat: *s.Server().defaultPF,
@@ -308,21 +308,21 @@ func (s *Session) ProcessNormalProtocol() {
 			panic(fmt.Errorf("read client message type failed: %s", err))
 		}
 
-		cmt := types.ClientMessageType(u8)
-		log.Printf("<<< read client message type: %d <%s>", u8, types.TranslateClientMessageType(cmt))
+		cmt := messages.ClientMessageType(u8)
+		log.Printf("<<< read client message type: %d <%s>", u8, messages.TranslateClientMessageType(cmt))
 
 		switch cmt {
-		case types.CMTSetPixelFormat:
+		case messages.CMTSetPixelFormat:
 			s.setPixelFormat()
-		case types.CMTSetEncodings:
+		case messages.CMTSetEncodings:
 			s.setEncodings()
-		case types.CMTFramebufferUpdateRequest:
+		case messages.CMTFramebufferUpdateRequest:
 			s.framebufferUpdateRequest()
-		case types.CMTKeyEvent:
+		case messages.CMTKeyEvent:
 			s.keyEvent()
-		case types.CMTPointerEvent:
+		case messages.CMTPointerEvent:
 			s.pointerEvent()
-		case types.CMTClientCutText:
+		case messages.CMTClientCutText:
 			s.clientCutText()
 		default:
 			panic(fmt.Errorf("unknown client message type: %d", cmt))
@@ -330,11 +330,11 @@ func (s *Session) ProcessNormalProtocol() {
 	}
 }
 
-func (s *Session) serverPixelFormat() *types.PixelFormat {
+func (s *Session) serverPixelFormat() *messages.PixelFormat {
 	return s.server.defaultPF
 }
 
-func (s *Session) setServerPixelFormat(pf *types.PixelFormat) {
+func (s *Session) setServerPixelFormat(pf *messages.PixelFormat) {
 	s.server.defaultPF = pf
 }
 
@@ -351,7 +351,7 @@ func (s *Session) setPixelFormat() {
 	if err != nil {
 		panic(fmt.Errorf("read pixel format failed: %s", err))
 	}
-	pf, err := types.NewPixelFormat(buf)
+	pf, err := messages.NewPixelFormat(buf)
 	if err != nil {
 		panic(fmt.Errorf("new pixel format failed: %s", err))
 	}
@@ -363,11 +363,11 @@ func (s *Session) setPixelFormat() {
 	}
 }
 
-func (s *Session) setServerEncodings(encodings types.Encodings) {
+func (s *Session) setServerEncodings(encodings messages.Encodings) {
 	s.server.encodings = encodings
 }
 
-func (s *Session) serverEncodings() types.Encodings {
+func (s *Session) serverEncodings() messages.Encodings {
 	return s.server.encodings
 }
 
@@ -384,13 +384,13 @@ func (s *Session) setEncodings() {
 	}
 	log.Printf("<<< read number of encodings: %d", encLen)
 
-	encodings := make(types.Encodings, encLen)
+	encodings := make(messages.Encodings, encLen)
 	for i := uint16(0); i < encLen; i++ {
 		enc, err := s.ReadInt32()
 		if err != nil {
 			panic(fmt.Errorf("read encodings failed: %s", err))
 		}
-		encodings[i] = types.Encoding(enc)
+		encodings[i] = messages.Encoding(enc)
 	}
 	s.setServerEncodings(encodings)
 	log.Printf("<<< read encodings: %v", encodings)
@@ -404,7 +404,7 @@ func (s *Session) framebufferUpdateRequest() {
 		panic(fmt.Errorf("read framebuffer update request failed: %s", err))
 	}
 
-	fbur, err := types.NewFramebufferUpdateRequest(buf)
+	fbur, err := messages.NewFramebufferUpdateRequest(buf)
 	if err != nil {
 		panic(fmt.Errorf("new framebuffer update request failed: %s", err))
 	}
@@ -419,11 +419,15 @@ func (s *Session) keyEvent() {
 		panic(fmt.Errorf("read key event failed: %s", err))
 	}
 
-	ke, err := types.NewKeyEvent(buf)
+	ke, err := messages.NewKeyEvent(buf)
 	if err != nil {
 		panic(fmt.Errorf("new key event failed: %s", err))
 	}
 	log.Printf(">>> read key event: %v, %+v", buf, ke)
+	err = s.WriteUint8(2)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func (s *Session) pointerEvent() {
@@ -433,7 +437,7 @@ func (s *Session) pointerEvent() {
 	if err != nil {
 		panic(fmt.Errorf("read pointer event failed: %s", err))
 	}
-	pe, err := types.NewPointerEvent(buf)
+	pe, err := messages.NewPointerEvent(buf)
 	if err != nil {
 		panic(fmt.Errorf("new pointer event failed: %s", err))
 	}

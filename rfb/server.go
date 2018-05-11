@@ -7,7 +7,7 @@ import (
 	"net"
 
 	"github.com/google/uuid"
-	"github.com/logeable/gorfb/rfb/types"
+	"github.com/logeable/gorfb/rfb/messages"
 )
 
 func NewServer() *Server {
@@ -17,7 +17,7 @@ func NewServer() *Server {
 		Width:  800,
 		Height: 600,
 		Name:   "RFB Server",
-		defaultPF: &types.PixelFormat{
+		defaultPF: &messages.PixelFormat{
 			// 8, 16, 32
 			BitsPerPixel:  32,
 			Depth:         32,
@@ -39,8 +39,8 @@ type Server struct {
 	Name          string
 	sessions      map[string]*Session
 	listener      net.Listener
-	defaultPF     *types.PixelFormat
-	encodings     types.Encodings
+	defaultPF     *messages.PixelFormat
+	encodings     messages.Encodings
 }
 
 func (s *Server) ListenAndServe(addr string) error {
